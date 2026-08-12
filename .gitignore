@@ -1,0 +1,19 @@
+# Node.js modullari (buni GitHubga yuklash umuman kerak emas)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Maxfiy kalitlar (ENG MUHIMI! .env fayl hech qachon internetga chiqmasligi kerak)
+.env
+
+# Ma'lumotlar bazasi (Foydalanuvchilar ma'lumoti GitHubda ochiq turmasligi uchun)
+database.db
+database.db-journal
+
+# IDE va Operatsion tizim fayllari
+.vscode/
+.idea/
+.DS_Store
+Thumbs
+# Log fayllar
+*.log
