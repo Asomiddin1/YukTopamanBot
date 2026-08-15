@@ -195,11 +195,9 @@ bot.on('message', async (msg) => {
     }
 
     // ==========================================
-    // ADMIN BUYRUQLARI (Bloklash / Ruxsat / Xabar yuborish)
+    // ADMIN BUYRUQLARI
     // ==========================================
     if (chatId === adminId) {
-
-        // 1. Ommaviy xabar yuborish (Barchaga)
         if (text.startsWith('/sendall ')) {
             const msgToSend = text.substring(9).trim();
             if (!msgToSend) return bot.sendMessage(adminId, "⚠️ Xabar matnini kiriting! Format: /sendall xabar_matni");
@@ -213,17 +211,14 @@ bot.on('message', async (msg) => {
                     try {
                         await bot.sendMessage(u.chatId, `📢 <b>Admindan e'lon:</b>\n\n${escapeHTML(msgToSend)}`, { parse_mode: 'HTML' });
                         count++;
-                        await new Promise(r => setTimeout(r, 300)); // Telegram limitiga tushmaslik uchun pauza
-                    } catch (e) {
-                        console.log(`Xabar yuborishda xato (${u.chatId}): ${e.message}`);
-                    }
+                        await new Promise(r => setTimeout(r, 300));
+                    } catch (e) { console.log(`Xabar yuborishda xato (${u.chatId}): ${e.message}`); }
                 }
                 bot.sendMessage(adminId, `✅ Xabar muvaffaqiyatli ${count} ta foydalanuvchiga yuborildi!`);
             });
             return;
         }
 
-        // 2. Bitta aniq odamga xabar yuborish
         if (text.startsWith('/send ')) {
             const parts = text.split(' ');
             const targetId = parts[1];
@@ -242,7 +237,6 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // 3. Ruxsat berish
         if (text.startsWith('/approve ')) {
             const targetId = text.split(' ')[1];
             if (targetId) {
@@ -253,7 +247,6 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // 4. Bloklash
         if (text.startsWith('/block ')) {
             const targetId = text.split(' ')[1];
             if (targetId) {
@@ -264,7 +257,6 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // 5. Admin menyusi (Statistika va Yo'riqnoma)
         if (text === '/admin') {
             db.all("SELECT * FROM drivers", (err, users) => {
                 if (err) return bot.sendMessage(adminId, "Xatolik yuz berdi.");
@@ -285,7 +277,6 @@ bot.on('message', async (msg) => {
         }
     }
 
-    // Agar foydalanuvchi Admin bo'lmasa va ruxsati bo'lmasa, uni to'xtatamiz
     if (chatId !== adminId && driver.status !== 'approved') {
         if (driver.status === 'pending') bot.sendMessage(chatId, "⏳ Sizning so'rovingiz Adminga yuborildi. Ruxsat kutilmoqda...");
         else if (driver.status === 'blocked') bot.sendMessage(chatId, "🚫 Kechirasiz, sizning botdan foydalanishingiz bloklangan.");
@@ -374,13 +365,18 @@ bot.on('message', async (msg) => {
             bot.sendMessage(chatId, "❌ Avval turgan joyni, boradigan joylarni va kanal kiriting!");
             return;
         }
+        
         bot.sendMessage(chatId, "⏳ <b>So'nggi 30 daqiqadagi e'lonlar tekshirilmoqda...</b>", { parse_mode: "HTML" });
+        bot.sendChatAction(chatId, 'typing'); // Yozmoqda effekti
+        
         let foundCount = 0;
         const startTimestamp = Math.floor((Date.now() - (30 * 60 * 1000)) / 1000);
 
         for (const ch of channels) {
             try {
                 console.log(`\n📡 Guruh tekshirilmoqda: ${ch.title}`);
+                bot.sendChatAction(chatId, 'typing'); // Har bir kanalda effektni yangilaymiz
+                
                 let peer = ch.username ? ch.username : BigInt(ch.channelId);
                 const messages = await client.getMessages(peer, { limit: 40 });
 
@@ -409,13 +405,18 @@ bot.on('message', async (msg) => {
             bot.sendMessage(chatId, "❌ Avval turgan joyni, boradigan joylarni va kanal kiriting!");
             return;
         }
-        bot.sendMessage(chatId, "⏳ <b>Bugungi butun e'lonlar tekshirilmoqda...</b> (Kutish vaqti uzayishi mumkin)", { parse_mode: "HTML" });
+        
+        bot.sendMessage(chatId, "⏳ <b>Bugungi butun e'lonlar AI orqali tahlil qilinmoqda...</b> (Kutish vaqti uzayishi mumkin)", { parse_mode: "HTML" });
+        bot.sendChatAction(chatId, 'typing'); // Yozmoqda effekti
+        
         let foundCount = 0;
         const startTimestamp = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
 
         for (const ch of channels) {
             try {
                 console.log(`\n📡 Guruh tekshirilmoqda: ${ch.title}`);
+                bot.sendChatAction(chatId, 'typing'); // Har bir kanalda effektni yangilaymiz
+                
                 let peer = ch.username ? ch.username : BigInt(ch.channelId);
                 const messages = await client.getMessages(peer, { limit: 100 });
 
@@ -484,7 +485,6 @@ bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id.toString();
     const messageId = query.message.message_id;
 
-    // Admin Ruxsat berish/Bloklash
     if (chatId === adminId && (data.startsWith('approve_') || data.startsWith('block_'))) {
         const isApprove = data.startsWith('approve_');
         const targetChatId = data.split('_')[1];
@@ -505,7 +505,6 @@ bot.on('callback_query', async (query) => {
 
     let driver = await getDriver(chatId);
 
-    // Foydalanuvchi joriy hududi (bitta tanlanadi)
     if (data.startsWith('cur_')) {
         let region = data.replace('cur_', '');
         await updateDriver(chatId, 'current', region);
@@ -513,7 +512,6 @@ bot.on('callback_query', async (query) => {
             chat_id: chatId, message_id: messageId, parse_mode: "HTML"
         });
     }
-    // Boradigan viloyatlar (ko'p tanlanadi)
     else if (data.startsWith('dest_')) {
         if (data === 'dest_save') {
             bot.editMessageText(`✅ Boradigan viloyatlar saqlandi:\n<b>${driver.home || "Tanlanmagan"}</b>`, {
@@ -537,12 +535,10 @@ bot.on('callback_query', async (query) => {
             });
         }
     }
-    // Kanal o'chirish
     else if (data.startsWith('del_channel_')) {
         const channelId = data.replace('del_channel_', '');
         await deleteChannel(channelId, chatId);
         
-        // Xabarni yangilash
         const updatedChannels = await getChannelsDetailed(chatId);
         let statusText = driver.isSearching ? "🟢 <b>Faol</b>" : "🔴 <b>To'xtatilgan</b>";
         const currentText = driver.current ? escapeHTML(driver.current) : "<i>Tanlanmagan</i> ❌";
@@ -559,7 +555,6 @@ bot.on('callback_query', async (query) => {
             });
         }
         
-        // Yangi inline keyboard yaratish
         let inlineKeyboard = [];
         if (updatedChannels.length > 0) {
             updatedChannels.forEach((ch) => {
@@ -580,10 +575,7 @@ bot.on('callback_query', async (query) => {
 });
 
 // ==========================================
-// USERBOT - ORQA FONDA TINGLASH (DIAGNOSTIKA BILAN)
-// ==========================================
-// ==========================================
-// USERBOT - ORQA FONDA TINGLASH (DIAGNOSTIKA BILAN)
+// USERBOT - ORQA FONDA TINGLASH
 // ==========================================
 (async () => {
     client = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
@@ -599,15 +591,11 @@ bot.on('callback_query', async (query) => {
     await client.getDialogs();
     console.log("✅ Guruhlar xotiraga muvaffaqiyatli yuklandi!");
 
-    // incoming: true va outgoing: true o'zingiz yozgan test xabarlarni ham ushlashi uchun
     client.addEventHandler(async (event) => {
         try {
             const message = event.message;
-            
-            // XATO SHU YERDA BO'LISHI MUMKIN: GramJS da matn message.message ichida keladi!
             const text = message?.message || message?.text || ""; 
 
-            // === 1. BARCHA XABARLARNI TERMINALGA CHIQARAMIZ ===
             console.log(`\n🔔 [TIZIM TINGLAYAPTI] Xabar ushlandi! (Uzunligi: ${text.length}). Matn: "${text.substring(0, 30)}..."`);
 
             if (text.length < 15) {
@@ -615,11 +603,23 @@ bot.on('callback_query', async (query) => {
                 return;
             }
 
-            const chat = await event.getChat();
-            if (!chat || !chat.id) return;
-            const chatIdStr = chat.id.toString();
+            let chatIdStr = "";
+            if (message.chatId) {
+                chatIdStr = message.chatId.toString();
+            } else if (message.peerId) {
+                const peer = message.peerId;
+                chatIdStr = (peer.channelId || peer.chatId || peer.userId || "").toString();
+            }
 
-            console.log(`📨 GURUH: "${chat.title || chatIdStr}"`);
+            if (!chatIdStr) {
+                console.log(`⚠️ Chat ID topilmadi! O'tkazib yuborildi.`);
+                return;
+            }
+
+            const chat = await event.getChat().catch(() => null);
+            const chatTitle = chat ? (chat.title || chat.username || chatIdStr) : chatIdStr;
+
+            console.log(`📨 GURUH/CHAT: "${chatTitle}" (ID: ${chatIdStr})`);
 
             const drivers = await getActiveSearches();
             
@@ -635,20 +635,20 @@ bot.on('callback_query', async (query) => {
                     continue;
                 }
                 const channels = await getChannelsDetailed(d.chatId);
-                const isMyChannel = channels.find(c => c.channelId.replace('-100', '') === chatIdStr.replace('-100', ''));
+                
+                const cleanMsgChatId = chatIdStr.replace('-100', '');
+                const isMyChannel = channels.find(c => c.channelId.replace('-100', '') === cleanMsgChatId);
 
                 if (!isMyChannel) {
                     console.log(`❌ Bu guruh haydovchining (${d.username}) ro'yxatida yo'q.`);
                 } else {
-                    // === 2. GURUH MOS KELSA AI GA YUBORAMIZ ===
                     console.log(`✅ Guruh bazada bor! AI tahliliga yuborilyapti...`);
                     
                     const isMatch = await analyzeLoad(text, d.current, d.home);
                     if (isMatch) {
                         console.log(`🎉 YUK MOS KELDI! Botga yuborilmoqda.`);
-                        let cleanId = chatIdStr.replace("-100", "");
-                        let link = chat.username ? `https://t.me/${chat.username}/${message.id}` : `https://t.me/c/${cleanId}/${message.id}`;
-                        bot.sendMessage(d.chatId, `🚨 <b>YANGI MOS YUK!</b>\n\n📦 ${escapeHTML(text)}\n\n🔗 <a href="${link}">Xabarga o'tish</a>\n🏢 ${escapeHTML(chat.title)}`, { parse_mode: "HTML", disable_web_page_preview: true });
+                        let link = chat?.username ? `https://t.me/${chat.username}/${message.id}` : `https://t.me/c/${cleanMsgChatId}/${message.id}`;
+                        bot.sendMessage(d.chatId, `🚨 <b>YANGI MOS YUK!</b>\n\n📦 ${escapeHTML(text)}\n\n🔗 <a href="${link}">Xabarga o'tish</a>\n🏢 ${escapeHTML(chatTitle)}`, { parse_mode: "HTML", disable_web_page_preview: true });
                     } else {
                         console.log(`🚫 AI rad etdi (Natija: MOS_EMAS).`);
                     }
