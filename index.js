@@ -53,7 +53,9 @@ db.serialize(() => {
 
 const getDriver = (chatId) => new Promise(res => db.get("SELECT * FROM drivers WHERE chatId = ?", [chatId.toString()], (e, r) => res(r)));
 const updateDriver = (chatId, field, value) => new Promise(res => db.run(`UPDATE drivers SET ${field} = ? WHERE chatId = ?`, [value, chatId.toString()], res));
-const getChannelsDetailed = (chatId) => new Promise(res => db.all("SELECT channelId, title, username FROM channels WHERE chatId = ?", [chatId.toString()], (e, r) => res(r || [])));
+const getChannelsDetailed = (chatId) => new Promise(res => db.all("SELECT id, channelId, title, username FROM channels WHERE chatId = ?", [chatId.toString()], (e, r) => res(r || [])));
+const deleteChannel = (id, chatId) => new Promise(res => db.run("DELETE FROM channels WHERE id = ? AND chatId = ?", [id, chatId.toString()], res));
+const getActiveSearches = () => new Promise(res => db.all("SELECT * FROM drivers WHERE isSearching = 1", (e, r) => res(r || [])));
 function escapeHTML(str) { return str ? str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : ""; }
 
 // ==========================================
@@ -315,13 +317,24 @@ bot.on('message', async (msg) => {
             messageText += "<i>Hali kanal qo'shilmagan.</i>";
         } else {
             channels.forEach((ch, index) => {
-                // Agar ochiq guruh bo'lsa @username, yopiq bo'lsa "Yopiq guruh" deb yozadi
                 let link = ch.username ? `@${ch.username}` : "<i>(Yopiq guruh)</i>";
                 messageText += `${index + 1}. <b>${escapeHTML(ch.title)}</b> — ${link}\n`;
             });
         }
 
-        bot.sendMessage(chatId, messageText, { parse_mode: "HTML", disable_web_page_preview: true });
+        let inlineKeyboard = [];
+        if (channels.length > 0) {
+            channels.forEach((ch) => {
+                const displayName = escapeHTML(ch.title.substring(0, 25));
+                inlineKeyboard.push([{ text: `❌ ${displayName}`, callback_data: `del_channel_${ch.id}` }]);
+            });
+        }
+
+        bot.sendMessage(chatId, messageText, { 
+            parse_mode: "HTML", 
+            disable_web_page_preview: true,
+            reply_markup: inlineKeyboard.length > 0 ? { inline_keyboard: inlineKeyboard } : undefined
+        });
         return;
     }
 
@@ -524,11 +537,53 @@ bot.on('callback_query', async (query) => {
             });
         }
     }
+    // Kanal o'chirish
+    else if (data.startsWith('del_channel_')) {
+        const channelId = data.replace('del_channel_', '');
+        await deleteChannel(channelId, chatId);
+        
+        // Xabarni yangilash
+        const updatedChannels = await getChannelsDetailed(chatId);
+        let statusText = driver.isSearching ? "🟢 <b>Faol</b>" : "🔴 <b>To'xtatilgan</b>";
+        const currentText = driver.current ? escapeHTML(driver.current) : "<i>Tanlanmagan</i> ❌";
+        const homeText = driver.home ? escapeHTML(driver.home) : "<i>Tanlanmagan</i> ❌";
+        
+        let newMessageText = `📊 <b>SIZNİNG JORIY HOLATINGIZ:</b>\n\n📍 <b>Turgan joy:</b> ${currentText}\n🏁 <b>Boradigan viloyatlar:</b> ${homeText}\n🔍 <b>Qidiruv:</b> ${statusText}\n\n📡 <b>KUZATILAYOTGAN KANALLAR (${updatedChannels.length} ta):</b>\n`;
+        
+        if (updatedChannels.length === 0) {
+            newMessageText += "<i>Hali kanal qo'shilmagan.</i>";
+        } else {
+            updatedChannels.forEach((ch, index) => {
+                let link = ch.username ? `@${ch.username}` : "<i>(Yopiq guruh)</i>";
+                newMessageText += `${index + 1}. <b>${escapeHTML(ch.title)}</b> — ${link}\n`;
+            });
+        }
+        
+        // Yangi inline keyboard yaratish
+        let inlineKeyboard = [];
+        if (updatedChannels.length > 0) {
+            updatedChannels.forEach((ch) => {
+                const displayName = escapeHTML(ch.title.substring(0, 25));
+                inlineKeyboard.push([{ text: `❌ ${displayName}`, callback_data: `del_channel_${ch.id}` }]);
+            });
+        }
+        
+        bot.editMessageText(newMessageText, {
+            chat_id: chatId, message_id: messageId, parse_mode: 'HTML',
+            reply_markup: inlineKeyboard.length > 0 ? { inline_keyboard: inlineKeyboard } : undefined
+        });
+        
+        bot.answerCallbackQuery(query.id, { text: "✅ Kanal o'chirildi", show_alert: false });
+        return;
+    }
     bot.answerCallbackQuery(query.id);
 });
 
 // ==========================================
-// USERBOT - ORQA FONDA TINGLASH
+// USERBOT - ORQA FONDA TINGLASH (DIAGNOSTIKA BILAN)
+// ==========================================
+// ==========================================
+// USERBOT - ORQA FONDA TINGLASH (DIAGNOSTIKA BILAN)
 // ==========================================
 (async () => {
     client = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
@@ -544,40 +599,63 @@ bot.on('callback_query', async (query) => {
     await client.getDialogs();
     console.log("✅ Guruhlar xotiraga muvaffaqiyatli yuklandi!");
 
+    // incoming: true va outgoing: true o'zingiz yozgan test xabarlarni ham ushlashi uchun
     client.addEventHandler(async (event) => {
-        const message = event.message;
-        const text = message.text || "";
-
-        if (text.length < 15) return;
-
         try {
+            const message = event.message;
+            
+            // XATO SHU YERDA BO'LISHI MUMKIN: GramJS da matn message.message ichida keladi!
+            const text = message?.message || message?.text || ""; 
+
+            // === 1. BARCHA XABARLARNI TERMINALGA CHIQARAMIZ ===
+            console.log(`\n🔔 [TIZIM TINGLAYAPTI] Xabar ushlandi! (Uzunligi: ${text.length}). Matn: "${text.substring(0, 30)}..."`);
+
+            if (text.length < 15) {
+                console.log(`⚠️ Xabar 15 ta harfdan kam bo'lgani uchun rad etildi.`);
+                return;
+            }
+
             const chat = await event.getChat();
             if (!chat || !chat.id) return;
             const chatIdStr = chat.id.toString();
 
-            db.all("SELECT * FROM drivers WHERE isSearching = 1", async (err, drivers) => {
-                if (!drivers) return;
-                for (const d of drivers) {
-                    if (Date.now() >= d.searchEndTime) {
-                        await updateDriver(d.chatId, 'isSearching', 0);
-                        bot.sendMessage(d.chatId, "⏰ 15 daqiqalik jonli qidiruv yakunlandi. Davom etish uchun yana 'Jonli qidiruv'ni bosing.");
-                        continue;
-                    }
-                    const channels = await getChannelsDetailed(d.chatId);
-                    const isMyChannel = channels.find(c => c.channelId.replace('-100', '') === chatIdStr.replace('-100', ''));
+            console.log(`📨 GURUH: "${chat.title || chatIdStr}"`);
 
-                    if (isMyChannel) {
-                        const isMatch = await analyzeLoad(text, d.current, d.home);
-                        if (isMatch) {
-                            let cleanId = chatIdStr.replace("-100", "");
-                            let link = chat.username ? `https://t.me/${chat.username}/${message.id}` : `https://t.me/c/${cleanId}/${message.id}`;
-                            bot.sendMessage(d.chatId, `🚨 <b>YANGI MOS YUK!</b>\n\n📦 ${escapeHTML(text)}\n\n🔗 <a href="${link}">Xabarga o'tish</a>\n🏢 ${escapeHTML(chat.title)}`, { parse_mode: "HTML", disable_web_page_preview: true });
-                        }
+            const drivers = await getActiveSearches();
+            
+            if (drivers.length === 0) {
+                console.log(`⚠️ Hech kimda Jonli qidiruv yoqilmagan. O'tkazib yuborildi.`);
+                return;
+            }
+
+            for (const d of drivers) {
+                if (Date.now() >= d.searchEndTime) {
+                    await updateDriver(d.chatId, 'isSearching', 0);
+                    bot.sendMessage(d.chatId, "⏰ 15 daqiqalik jonli qidiruv yakunlandi. Davom etish uchun yana 'Jonli qidiruv'ni bosing.");
+                    continue;
+                }
+                const channels = await getChannelsDetailed(d.chatId);
+                const isMyChannel = channels.find(c => c.channelId.replace('-100', '') === chatIdStr.replace('-100', ''));
+
+                if (!isMyChannel) {
+                    console.log(`❌ Bu guruh haydovchining (${d.username}) ro'yxatida yo'q.`);
+                } else {
+                    // === 2. GURUH MOS KELSA AI GA YUBORAMIZ ===
+                    console.log(`✅ Guruh bazada bor! AI tahliliga yuborilyapti...`);
+                    
+                    const isMatch = await analyzeLoad(text, d.current, d.home);
+                    if (isMatch) {
+                        console.log(`🎉 YUK MOS KELDI! Botga yuborilmoqda.`);
+                        let cleanId = chatIdStr.replace("-100", "");
+                        let link = chat.username ? `https://t.me/${chat.username}/${message.id}` : `https://t.me/c/${cleanId}/${message.id}`;
+                        bot.sendMessage(d.chatId, `🚨 <b>YANGI MOS YUK!</b>\n\n📦 ${escapeHTML(text)}\n\n🔗 <a href="${link}">Xabarga o'tish</a>\n🏢 ${escapeHTML(chat.title)}`, { parse_mode: "HTML", disable_web_page_preview: true });
+                    } else {
+                        console.log(`🚫 AI rad etdi (Natija: MOS_EMAS).`);
                     }
                 }
-            });
+            }
         } catch (err) {
             console.error("Userbot event xatosi:", err.message);
         }
-    }, new NewMessage({}));
+    }, new NewMessage({ incoming: true, outgoing: true }));
 })();
