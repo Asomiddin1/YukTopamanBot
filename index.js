@@ -4,7 +4,7 @@ const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const { NewMessage } = require('telegram/events');
 const input = require('input');
-const sqlite3 = require('sqlite3').verbose();
+const mysql = require('mysql2/promise');
 const { OpenAI } = require('openai');
 
 // ==========================================
@@ -38,24 +38,56 @@ let client;
 bot.on('polling_error', (error) => console.log("⚠️ Telegram uzilishi (Kutmoqdamiz)..."));
 bot.on('error', (error) => console.log("⚠️ Telegram Xatosi:", error.message));
 
-// --- BAZA BILAN ISHLASH ---
-const db = new sqlite3.Database('./database.db', (err) => {
-    if (err) console.error("Bazaga ulanishda xato:", err);
-    else console.log("✅ SQLite bazasiga ulandi!");
+// ==========================================
+// MYSQL BAZA BILAN ISHLASH
+// ==========================================
+const pool = mysql.createPool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
-db.serialize(() => {
-    db.run("CREATE TABLE IF NOT EXISTS drivers (chatId TEXT PRIMARY KEY, home TEXT, current TEXT, isSearching INTEGER, searchEndTime INTEGER, step TEXT, status TEXT, username TEXT)");
-    db.run("CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, chatId TEXT, channelId TEXT, title TEXT, username TEXT)");
-    db.run("ALTER TABLE drivers ADD COLUMN status TEXT", (err) => { });
-    db.run("ALTER TABLE drivers ADD COLUMN username TEXT", (err) => { });
-});
+async function initDB() {
+    try {
+        await pool.query("CREATE TABLE IF NOT EXISTS drivers (chatId VARCHAR(50) PRIMARY KEY, home TEXT, current TEXT, isSearching INT DEFAULT 0, searchEndTime BIGINT, step TEXT, status TEXT, username TEXT)");
+        await pool.query("CREATE TABLE IF NOT EXISTS channels (id INT AUTO_INCREMENT PRIMARY KEY, chatId VARCHAR(50), channelId VARCHAR(50), title TEXT, username TEXT)");
+        console.log("✅ MySQL bazasiga ulandi va jadvallar tayyor!");
+    } catch (err) {
+        console.error("❌ MySQL ulanishda xato:", err.message);
+    }
+}
+initDB();
 
-const getDriver = (chatId) => new Promise(res => db.get("SELECT * FROM drivers WHERE chatId = ?", [chatId.toString()], (e, r) => res(r)));
-const updateDriver = (chatId, field, value) => new Promise(res => db.run(`UPDATE drivers SET ${field} = ? WHERE chatId = ?`, [value, chatId.toString()], res));
-const getChannelsDetailed = (chatId) => new Promise(res => db.all("SELECT id, channelId, title, username FROM channels WHERE chatId = ?", [chatId.toString()], (e, r) => res(r || [])));
-const deleteChannel = (id, chatId) => new Promise(res => db.run("DELETE FROM channels WHERE id = ? AND chatId = ?", [id, chatId.toString()], res));
-const getActiveSearches = () => new Promise(res => db.all("SELECT * FROM drivers WHERE isSearching = 1", (e, r) => res(r || [])));
+const getDriver = async (chatId) => {
+    const [rows] = await pool.query("SELECT * FROM drivers WHERE chatId = ?", [chatId.toString()]);
+    return rows[0];
+};
+
+const updateDriver = async (chatId, field, value) => {
+    const allowedFields = ['home', 'current', 'isSearching', 'searchEndTime', 'step', 'status', 'username'];
+    if (allowedFields.includes(field)) {
+        await pool.query(`UPDATE drivers SET ${field} = ? WHERE chatId = ?`, [value, chatId.toString()]);
+    }
+};
+
+const getChannelsDetailed = async (chatId) => {
+    const [rows] = await pool.query("SELECT id, channelId, title, username FROM channels WHERE chatId = ?", [chatId.toString()]);
+    return rows;
+};
+
+const deleteChannel = async (id, chatId) => {
+    await pool.query("DELETE FROM channels WHERE id = ? AND chatId = ?", [id, chatId.toString()]);
+};
+
+const getActiveSearches = async () => {
+    const [rows] = await pool.query("SELECT * FROM drivers WHERE isSearching = 1");
+    return rows;
+};
+
 function escapeHTML(str) { return str ? str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : ""; }
 
 // ==========================================
@@ -169,7 +201,7 @@ bot.on('message', async (msg) => {
     // Foydalanuvchini bazaga qo'shish va Admindan ruxsat so'rash
     if (!driver) {
         let initialStatus = (chatId === adminId) ? 'approved' : 'pending';
-        await new Promise((resolve) => db.run("INSERT INTO drivers (chatId, status, username) VALUES (?, ?, ?)", [chatId, initialStatus, username], resolve));
+        await pool.query("INSERT INTO drivers (chatId, status, username) VALUES (?, ?, ?)", [chatId, initialStatus, username]);
         driver = await getDriver(chatId);
 
         if (chatId !== adminId && adminId) {
@@ -202,8 +234,8 @@ bot.on('message', async (msg) => {
             const msgToSend = text.substring(9).trim();
             if (!msgToSend) return bot.sendMessage(adminId, "⚠️ Xabar matnini kiriting! Format: /sendall xabar_matni");
 
-            db.all("SELECT chatId FROM drivers WHERE status = 'approved'", async (err, users) => {
-                if (err) return bot.sendMessage(adminId, "❌ Baza bilan xatolik yuz berdi.");
+            try {
+                const [users] = await pool.query("SELECT chatId FROM drivers WHERE status = 'approved'");
                 let count = 0;
                 bot.sendMessage(adminId, `⏳ Xabar yuborilmoqda...`);
 
@@ -215,7 +247,9 @@ bot.on('message', async (msg) => {
                     } catch (e) { console.log(`Xabar yuborishda xato (${u.chatId}): ${e.message}`); }
                 }
                 bot.sendMessage(adminId, `✅ Xabar muvaffaqiyatli ${count} ta foydalanuvchiga yuborildi!`);
-            });
+            } catch (err) {
+                bot.sendMessage(adminId, "❌ Baza bilan xatolik yuz berdi: " + err.message);
+            }
             return;
         }
 
@@ -258,8 +292,8 @@ bot.on('message', async (msg) => {
         }
 
         if (text === '/admin') {
-            db.all("SELECT * FROM drivers", (err, users) => {
-                if (err) return bot.sendMessage(adminId, "Xatolik yuz berdi.");
+            try {
+                const [users] = await pool.query("SELECT * FROM drivers");
                 let msgText = "👥 <b>Barcha foydalanuvchilar:</b>\n\n";
                 users.forEach((u, i) => {
                     let s = u.status === 'approved' ? '✅' : (u.status === 'blocked' ? '🚫' : '⏳');
@@ -272,7 +306,9 @@ bot.on('message', async (msg) => {
                 msgText += "📢 Hammaga xabar: <code>/sendall xabar_matni</code>\n";
 
                 bot.sendMessage(adminId, msgText, { parse_mode: 'HTML' });
-            });
+            } catch (err) {
+                bot.sendMessage(adminId, "Xatolik yuz berdi: " + err.message);
+            }
             return;
         }
     }
@@ -367,7 +403,7 @@ bot.on('message', async (msg) => {
         }
         
         bot.sendMessage(chatId, "⏳ <b>So'nggi 30 daqiqadagi e'lonlar tekshirilmoqda...</b>", { parse_mode: "HTML" });
-        bot.sendChatAction(chatId, 'typing'); // Yozmoqda effekti
+        bot.sendChatAction(chatId, 'typing');
         
         let foundCount = 0;
         const startTimestamp = Math.floor((Date.now() - (30 * 60 * 1000)) / 1000);
@@ -375,7 +411,7 @@ bot.on('message', async (msg) => {
         for (const ch of channels) {
             try {
                 console.log(`\n📡 Guruh tekshirilmoqda: ${ch.title}`);
-                bot.sendChatAction(chatId, 'typing'); // Har bir kanalda effektni yangilaymiz
+                bot.sendChatAction(chatId, 'typing');
                 
                 let peer = ch.username ? ch.username : BigInt(ch.channelId);
                 const messages = await client.getMessages(peer, { limit: 40 });
@@ -407,7 +443,7 @@ bot.on('message', async (msg) => {
         }
         
         bot.sendMessage(chatId, "⏳ <b>Bugungi butun e'lonlar AI orqali tahlil qilinmoqda...</b> (Kutish vaqti uzayishi mumkin)", { parse_mode: "HTML" });
-        bot.sendChatAction(chatId, 'typing'); // Yozmoqda effekti
+        bot.sendChatAction(chatId, 'typing');
         
         let foundCount = 0;
         const startTimestamp = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
@@ -415,7 +451,7 @@ bot.on('message', async (msg) => {
         for (const ch of channels) {
             try {
                 console.log(`\n📡 Guruh tekshirilmoqda: ${ch.title}`);
-                bot.sendChatAction(chatId, 'typing'); // Har bir kanalda effektni yangilaymiz
+                bot.sendChatAction(chatId, 'typing');
                 
                 let peer = ch.username ? ch.username : BigInt(ch.channelId);
                 const messages = await client.getMessages(peer, { limit: 100 });
@@ -446,7 +482,7 @@ bot.on('message', async (msg) => {
     }
 
     // ==========================================
-    // AQLLI GURUH QO'SHISH (Yangi tizim)
+    // AQLLI GURUH QO'SHISH
     // ==========================================
     if (driver.step === 'add_channel') {
         await updateDriver(chatId, 'step', null);
@@ -459,7 +495,7 @@ bot.on('message', async (msg) => {
             const isNotMember = entity.left === true;
 
             if (!isExist) {
-                db.run("INSERT INTO channels (chatId, channelId, title, username) VALUES (?, ?, ?, ?)", [chatId, idStr, entity.title || "Nomsiz", entity.username || ""]);
+                await pool.query("INSERT INTO channels (chatId, channelId, title, username) VALUES (?, ?, ?, ?)", [chatId, idStr, entity.title || "Nomsiz", entity.username || ""]);
 
                 if (isNotMember) {
                     bot.sendMessage(adminId, `🔔 <b>YANGI GURUHGA QO'SHILISH SO'ROVI</b>\n\n👤 Foydalanuvchi: ${driver.username}\n🔗 Ssilka: ${text}\n\nBu Ochiq guruh, lekin sizning Userbotingiz unga a'zo emas. Iltimos, Telegramingizdan shu guruhga qo'shilib qo'ying, aks holda yuklar kelmaydi!`, { parse_mode: 'HTML' });
@@ -575,7 +611,7 @@ bot.on('callback_query', async (query) => {
 });
 
 // ==========================================
-// USERBOT - ORQA FONDA TINGLASH
+// USERBOT - ORQA FONDA TINGLASH (DIAGNOSTIKA BILAN)
 // ==========================================
 (async () => {
     client = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
