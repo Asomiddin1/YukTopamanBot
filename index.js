@@ -170,53 +170,66 @@ function getTruckTypeKeyboard() {
     };
 }
 
-// ==========================================
-// GPT-4o-mini BILAN TAHLIL
-// ==========================================
+
+// GPT-4o-mini BILAN QAT'IY TAHLIL
+
 async function analyzeLoad(messageText, currentLocation, homeLocation, truckType = 'small') {
     if (messageText.length < 15) return false;
 
     try {
-        const safeText = messageText.substring(0, 250).replace(/\s+/g, ' ').trim();
+        const safeText = messageText.substring(0, 800).replace(/\s+/g, ' ').trim();
 
         let truckRule = "";
         if (truckType === 'small') {
-            truckRule = `4. MASHINA TURI VA YUK VAZNI (KICHKINA ISUZU):
+            truckRule = `3. MASHINA TURI VA YUK VAZNI (KICHKINA ISUZU):
 - Haydovchida Kichkina Isuzu (8 tonnagacha bo'lgan yuklar uchun).
-- Guruhlardagi xabarlarda "kichkina isuzu", "mayda isuzu", "kichik isuzu", "isuzu", "labo", "porter", "gazel" deb aytiladi yoki 8 tonnagacha (masalan: 1t, 2t, 3t, 4t, 5t, 6t, 7t, 8 tonnagacha) yuklar yoziladi. Bunday e'lonlar Kichkina Isuzuga QAT'IY MOS keladi.
-- Agar e'londa yuk 8 tonnadan ortiq ekani ochiq ko'rsatilgan bo'lsa (masalan: 9t, 10t, 15t, 20t, 22t, fura, tirkama, katta mashina, 10 tonnalik), QAT'IY "MOS_EMAS" deb javob ber.
-- Agar yuk vazni yoki mashina turi aniq ko'rsatilmagan bo'lsa, lekin yo'nalish to'g'ri kelsa, "MOS" deb hisobla.`;
+- E'londa "kichkina isuzu", "mayda isuzu", "kichik isuzu", "isuzu", "labo", "porter", "gazel" so'zlari yoki 8 tonnagacha (masalan: 1t, 2t, 3t, 4t, 5t, 6t, 7t, 8 tonnagacha) og'irlik bo'lsa -> MOS.
+- Agar e'londa yuk 8 tonnadan ortiq ekani ochiq aytilgan bo'lsa (masalan: 9t, 10t, 15t, 20t, 22t, fura, tirkama, katta mashina, 10 tonnalik) -> QAT'IY "MOS_EMAS".
+- Agar yuk vazni yoki mashina turi yozilmagan bo'lsa, lekin yo'nalish to'g'ri bo'lsa -> "MOS".`;
         } else if (truckType === 'big') {
-            truckRule = `4. MASHINA TURI VA YUK VAZNI (KATTA ISUZU):
+            truckRule = `3. MASHINA TURI VA YUK VAZNI (KATTA ISUZU):
 - Haydovchida Katta Isuzu (8 tonnadan ortiq yuklar uchun).
-- E'londa 8 tonnadan ortiq yuk (masalan: 9t, 10t, 12t, 15t, 20t, fura, katta isuzu, 10 tonnalik va h.k.) so'ralgan bo'lsa, MOS keladi.
-- Agar e'londa "kichkina isuzu", "mayda isuzu", "labo", "porter" yoki aniq 8 tonnadan kam (1-5 tonna) kichik yuk aytilgan bo'lsa, QAT'IY "MOS_EMAS" deb javob ber.
-- Agar yuk vazni aniq ko'rsatilmagan bo'lsa, lekin yo'nalish to'g'ri kelsa, "MOS" deb hisobla.`;
+- E'londa 8 tonnadan ortiq yuk (masalan: 9t, 10t, 12t, 15t, 20t, fura, katta isuzu, 10 tonnalik va h.k.) so'ralgan bo'lsa -> MOS.
+- Agar e'londa "kichkina isuzu", "mayda isuzu", "labo", "porter" yoki aniq 8 tonnadan kam (1-5 tonna) kichik yuk aytilgan bo'lsa -> QAT'IY "MOS_EMAS".
+- Agar yuk vazni yozilmagan bo'lsa, lekin yo'nalish to'g'ri bo'lsa -> "MOS".`;
         } else {
-            truckRule = `4. MASHINA TURI: Har qanday yuk vazni va mashina turi mos keladi.`;
+            truckRule = `3. MASHINA TURI: Har qanday yuk vazni va mashina turi mos keladi.`;
         }
 
-        console.log(`\n--- 🤖 AI TAHLIL: ${currentLocation} ➡️ ${homeLocation} (${truckType}) ---`);
-        console.log(`📦 Matn: "${safeText.substring(0, 50)}..."`);
+        console.log(`\n--- 🤖 AI TAHLIL: [Turgan joy: ${currentLocation}] ➡️ [Boradigan: ${homeLocation}] (${truckType}) ---`);
+        console.log(`📦 E'lon: "${safeText.substring(0, 100)}..."`);
 
-        const prompt = `Sen O'zbekiston telegram yuk e'lonlarini tahlil qiluvchi qat'iy logistika tizimisan.
-Haydovchi hozir turgan hudud: "${currentLocation}"
-Haydovchi borishga tayyor bo'lgan hududlar: "${homeLocation}"
-Haydovchi mashina turi: ${truckType === 'small' ? 'Kichkina Isuzu (8 tonnagacha / mayda isuzu)' : (truckType === 'big' ? 'Katta Isuzu (8 tonnadan ko\'p)' : 'Barchasi')}
+        const prompt = `Sen O'zbekiston telegram yuk tashish e'lonlarini tahlil qiluvchi juda qat'iy va aqlli logistika tizimisan.
 
-QAT'IY QOIDALAR:
-1. E'lonni o'qi va yuk aniq QAYERDAN olinib, QAYERGA ketyotganini top. O'zingdan shahar yoki viloyat nomi to'qima!
-2. YUK OLINADIGAN JOY (Eng muhimi!): Yuk FAQAT VA FAQAT "${currentLocation}" viloyatidan (yoki shu viloyatning istalgan tumanidan) olinishi shart! Agar yuk boshqa viloyatdan boshlansa, QAT'IY "MOS_EMAS" deb yoz. "Yo'l ustida" degan bahona o'tmaydi.
-3. YUK BORADIGAN JOY: Yuk "${homeLocation}" da ko'rsatilgan viloyatlardan istalgan biriga (yoki ularning tumanlariga) borishi kerak.
+HAYDOVCHI MA'LUMOTLARI:
+- Haydovchi HOZIR TURGAN hudud (Yuk faqat shu viloyat/tumandan boshlanishi shart): "${currentLocation}"
+- Haydovchi BORISHI MUMKIN BO'LGAN hududlar (Yuk shu viloyatlarga borishi kerak): "${homeLocation}"
+- Haydovchi mashinasi: ${truckType === 'small' ? 'Kichkina Isuzu (8 tonnagacha / mayda isuzu)' : (truckType === 'big' ? 'Katta Isuzu (8 tonnadan ko\'p)' : 'Barchasi')}
+
+O'ZBEK TILI E'LONLARINI TO'G'RI TUSHUNISH QOIDALARI:
+1. QAYERDAN (Yuk qayerdan yuklanadi):
+   - So'z oxirida "-dan", "-den" qo'shimchasi bo'ladi (Masalan: "Arnasoydan", "Jizzaxdan", "Jarqo'rg'ondan", "Toshkentdan").
+   - Yoki yo'nalish boshida birinchi kelgan shahar (Masalan: "Jizzax Arnasoy - Surxondaryo").
+2. QAYERGA (Yuk qayerga yetkaziladi):
+   - So'z oxirida "-ga", "-ka", "-qa" qo'shimchasi bo'ladi (Masalan: "Surxondaryoga", "Jarqo'rg'onga", "Toshkentga", "Chirchiqqa").
+   - Yoki yo'nalishda ikkinchi kelgan shahar (Masalan: "Jizzax -> Surxondaryo").
+
+MUHIM OGOHLANTIRISH VA QAT'IY SHARTLAR:
+1. YUK BOSHLANISHI (QAYERDAN):
+   - E'londagi yuk FAQAT VA FAQAT "${currentLocation}" viloyati (yoki uning tuman/shaharlari) dan boshlanishi SHART!
+   - AGAR YUK BOSHQASIDAN BO'LSA (Masalan: e'londa "Jizzax Arnasoydan Surxondaryoga" deyilgan, lekin haydovchi Surxondaryoda turgan bo'lsa — bu yuk Jizzaxdan olinadi, haydovchiga to'g'ri kelmaydi!), BUNDAY TESKARI VA BEGONA YUKLARNI QAT'IY "MOS_EMAS" DEB BAHOLA!
+2. YUK BORISHI (QAYERGA):
+   - Yuk "${homeLocation}" ro'yxatida keltirilgan viloyatlardan biriga (yoki ularning tuman/shaharlariga) borishi SHART!
 ${truckRule}
-5. Javobing FAQAT va FAQAT JSON ko'rinishida bo'lsin. Hech qanday qo'shimcha so'z qo'shma.
 
-E'lon: "${safeText}"
+E'lon matni:
+"""${safeText}"""
 
 Faqat ushbu JSON formatda javob ber:
 {
-  "qayerdan": "shahar nomi yoki YO'Q",
-  "qayerga": "shahar nomi yoki YO'Q",
+  "qayerdan": "Yuk yuklanadigan joy (aniqlangan shahar/tuman)",
+  "qayerga": "Yuk tushiriladigan joy (aniqlangan shahar/tuman)",
+  "sabab": "Nega mos yoki mos emasligi (qisqa tushuntirish)",
   "natija": "MOS yoki MOS_EMAS"
 }`;
 
@@ -230,7 +243,7 @@ Faqat ushbu JSON formatda javob ber:
         const responseText = chatCompletion.choices[0]?.message?.content?.trim() || "{}";
         const resultJSON = JSON.parse(responseText);
 
-        console.log(`🧠 AI JAVOBI: ${resultJSON.qayerdan} ➡️ ${resultJSON.qayerga} | Natija: ${resultJSON.natija}`);
+        console.log(`🧠 AI XULOSASI: ${resultJSON.qayerdan} ➡️ ${resultJSON.qayerga} | Sabab: ${resultJSON.sabab} | Natija: ${resultJSON.natija}`);
         return resultJSON.natija === "MOS";
     } catch (error) {
         if (error.message.includes('429')) console.log("⏳ OpenRouter Limiti to'ldi. Kuting...");
