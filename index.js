@@ -214,10 +214,11 @@ O'ZBEK TILI E'LONLARINI TO'G'RI TUSHUNISH QOIDALARI:
    - So'z oxirida "-ga", "-ka", "-qa" qo'shimchasi bo'ladi (Masalan: "Surxondaryoga", "Jarqo'rg'onga", "Toshkentga", "Chirchiqqa").
    - Yoki yo'nalishda ikkinchi kelgan shahar (Masalan: "Jizzax -> Surxondaryo").
 
-MUHIM OGOHLANTIRISH VA QAT'IY SHARTLAR:
+MUHIM OGOHLANTIRISH (GEOGRAFIYA VA QAT'IY SHARTLAR):
 1. YUK BOSHLANISHI (QAYERDAN):
-   - E'londagi yuk FAQAT VA FAQAT "${currentLocation}" viloyati (yoki uning tuman/shaharlari) dan boshlanishi SHART!
-   - AGAR YUK BOSHQASIDAN BO'LSA (Masalan: e'londa "Jizzax Arnasoydan Surxondaryoga" deyilgan, lekin haydovchi Surxondaryoda turgan bo'lsa — bu yuk Jizzaxdan olinadi, haydovchiga to'g'ri kelmaydi!), BUNDAY TESKARI VA BEGONA YUKLARNI QAT'IY "MOS_EMAS" DEB BAHOLA!
+   - O'ZBEKISTON GEOGRAFIYASINI ISHLAT! E'londagi shahar/tuman nomi "${currentLocation}" viloyati ichida joylashgan bo'lsa (Masalan: Termiz, Denov, Boysun so'zlari yozilsa va haydovchi Surxondaryoda bo'lsa), bu 100% MOS keladi! Buni xato qilib "MOS_EMAS" deb baholama!
+   - Yuk qat'iyan "${currentLocation}" viloyatidan YOKI uning hududidagi tuman/shaharlardan boshlanishi SHART! 
+   - Agar yuk mutlaqo boshqa viloyatdan boshlansa (Masalan: haydovchi Surxondaryoda, lekin yuk Jizzaxdan boshlansa), QAT'IY "MOS_EMAS" deb bahola!
 2. YUK BORISHI (QAYERGA):
    - Yuk "${homeLocation}" ro'yxatida keltirilgan viloyatlardan biriga (yoki ularning tuman/shaharlariga) borishi SHART!
 ${truckRule}
@@ -232,7 +233,6 @@ Faqat ushbu JSON formatda javob ber:
   "sabab": "Nega mos yoki mos emasligi (qisqa tushuntirish)",
   "natija": "MOS yoki MOS_EMAS"
 }`;
-
         const chatCompletion = await openai.chat.completions.create({
             messages: [{ role: 'user', content: prompt }],
             model: 'openai/gpt-4o-mini',
